@@ -14,7 +14,7 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve", // <--- NAJWAŻNIEJSZA ZMIANA
+    "jsx": "preserve",
     "incremental": true,
     "plugins": [
       {
