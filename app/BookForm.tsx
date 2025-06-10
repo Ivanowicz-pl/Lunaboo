@@ -12,13 +12,15 @@ const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, de
   for (let i = 0; i < retries; i++) {
     try {
       const response = await fetch(url, options);
+      // Jeśli odpowiedź jest OK lub jeśli to błąd klienta (np. 400), który nie powinien być ponawiany, zwracamy od razu.
       if (response.ok || (response.status >= 400 && response.status < 500)) {
         return response;
       }
+      // W przeciwnym razie (błąd serwera 5xx lub błąd sieciowy) rzucamy błąd, aby ponowić próbę.
       throw new Error(`Server error: ${response.status}`);
     } catch (error) {
       console.log(`Próba ${i + 1} nie powiodła się. Ponawiam za ${delay / 1000}s...`);
-      if (i === retries - 1) throw error;
+      if (i === retries - 1) throw error; // Rzuć błąd po ostatniej nieudanej próbie
       await new Promise(res => setTimeout(res, delay));
     }
   }
@@ -250,10 +252,10 @@ export default function BookForm() {
               bookProportion: bookProportion, age: age 
           };
           
-          const pdfRes = await fetchWithRetry("/api/generate-pdf", { 
-              method: "POST", headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(pdfRequestData),
-          });
+       const pdfRes = await fetchWithRetry("/api/generate-pdf", { 
+    method: "POST", headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(pdfRequestData),
+});
 
           if (!pdfRes.ok) {
               const errorData = await pdfRes.json().catch(() => ({error: "Nie udało się odczytać błędu serwera PDF."}));

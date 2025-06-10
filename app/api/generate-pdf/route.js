@@ -1,11 +1,10 @@
 // /app/api/generate-pdf/route.js
 import { NextResponse } from "next/server";
-// ZMIANA IMPORTÓW:
-import chromium from '@sparticuz/chromium';
-import core from 'puppeteer-core';
-// KONIEC ZMIAN
 import fs from 'fs/promises';
 import path from 'path';
+
+// Usunięto statyczne importy puppeteer i chromium, ponieważ ładujemy je dynamicznie
+// w funkcji generatePdfBufferWithPuppeteer
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const TEXT_API_URL = process.env.NEXT_PUBLIC_TEXT_API_URL || "https://api.openai.com";
@@ -119,211 +118,49 @@ async function getPdfStyles(fontSet) {
     return `
     <style>
       ${fontFaces}
-
+      
       /* --- 1. USTAWIENIA GLOBALNE I PODSTAWOWE --- */
-      @page {
-        margin: 0;
-      }
-      body {
-        font-family: "${fontSet.bodyFontFamily || "EB Garamond"}", serif;
-        font-size: 11.5pt;
-        line-height: 1.65;
-        color: #34495e;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-        margin: 0;
-        padding: 0;
-      }
-      .page {
-        page-break-after: always;
-        width: 100%;
-        height: 100vh;
-        display: flex;
-        flex-direction: column;
-        box-sizing: border-box;
-        overflow: hidden;
-        position: relative;
-      }
-      .page:not(.cover):not(.story-page) {
-        border: 1px solid #e0e0e0;
-        padding: 18mm 13mm 20mm 13mm;
-      }
-      .page:last-child {
-        page-break-after: auto;
-      }
+      @page { margin: 0; }
+      body { font-family: "${fontSet.bodyFontFamily || "EB Garamond"}", serif; font-size: 11.5pt; line-height: 1.65; color: #34495e; -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
+      .page { page-break-after: always; width: 100%; height: 100vh; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; position: relative; padding: 18mm 13mm 20mm 13mm; }
+      .page:not(.cover):not(.story-page) { border: 1px solid #e0e0e0; }
+      .page:last-child { page-break-after: auto; }
 
       /* --- 2. OKŁADKA --- */
-      .cover {
-        background-size: cover;
-        background-position: center center;
-        justify-content: flex-end;
-        align-items: flex-start;
-        padding: 20mm 20mm 18mm 23mm;
-      }
-      .cover .cover-text-wrapper {
-        text-align: left;
-      }
-      .cover .cover-title {
-        font-family: "${fontSet.titleFontFamily || "Luckiest Guy"}", cursive;
-        font-size: 34pt;
-        line-height: 1.3;
-        color: #FFFFFF;
-        text-shadow: 3px 3px 0px rgba(45, 60, 45, 0.7), -1px -1px 0 rgba(45, 60, 45, 0.7), 1px -1px 0 rgba(45, 60, 45, 0.7), -1px 1px 0 rgba(45, 60, 45, 0.7), 1px 1px 0 rgba(45, 60, 45, 0.7);
-        margin-bottom: 2mm;
-      }
-      .cover .cover-child-dedication {
-        font-family: "Pacifico", cursive;
-        font-size: 20pt;
-        color: #FCEE8D;
-        text-shadow: 1.5px 1.5px 3px rgba(40, 50, 40, 0.9);
-      }
+      .cover { background-size: cover; background-position: center center; justify-content: flex-end; align-items: flex-start; padding: 20mm 20mm 10mm 14mm; }
+      .cover .cover-text-wrapper { text-align: left; }
+      .cover .cover-title { font-family: "${fontSet.titleFontFamily || "Luckiest Guy"}", cursive; font-size: 32pt; line-height: 1.3; color: #FFFFFF; text-shadow: 3px 3px 0px rgba(45, 60, 45, 0.7), -1px -1px 0 rgba(45, 60, 45, 0.7), 1px -1px 0 rgba(45, 60, 45, 0.7), -1px 1px 0 rgba(45, 60, 45, 0.7), 1px 1px 0 rgba(45, 60, 45, 0.7); margin-bottom: 1mm; }
+      .cover .cover-child-dedication { font-family: "Pacifico", cursive; font-size: 18pt; color: #FCEE8D; text-shadow: 1.5px 1.5px 3px rgba(40, 50, 40, 0.9); }
       
       /* --- 3. WEWNĘTRZNA STRONA TYTUŁOWA --- */
-      .title-page {
-        justify-content: center;
-        align-items: center;
-        text-align: center;
-      }
-      .title-page h1 {
-        font-family: "Pacifico", cursive;
-        font-size: 42pt;
-        margin-bottom: 8mm;
-        color: #2c3e50;
-      }
-      .title-page .subtitle {
-        font-family: "${fontSet.bodyFontFamily || "EB Garamond"}", serif;
-        font-size: 15pt;
-        font-style: italic;
-        color: #555;
-        margin-bottom: 25mm;
-        max-width: 75%;
-      }
-      .title-page .logo-placeholder {
-        position: absolute;
-        bottom: 20mm;
-        left: 0;
-        right: 0;
-        font-size: 9pt;
-        color: #b0b0b0;
-      }
+      .title-page { justify-content: center; align-items: center; text-align: center; }
+      .title-page h1 { font-family: "Pacifico", cursive; font-size: 42pt; margin-bottom: 8mm; color: #2c3e50; }
+      .title-page .subtitle { font-family: "${fontSet.bodyFontFamily || "EB Garamond"}", serif; font-size: 15pt; font-style: italic; color: #555; margin-bottom: 25mm; max-width: 75%; }
+      .title-page .logo-placeholder { position: absolute; bottom: 20mm; left: 0; right: 0; font-size: 9pt; color: #b0b0b0; }
       
       /* --- 4. STRONA "TA KSIĄŻKA NALEŻY DO..." --- */
-      .ownership-page {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        text-align: center;
-      }
-      .ownership-page .belongs-to {
-        font-family: "${fontSet.bodyFontFamily}", serif;
-        font-size: 14pt;
-        font-style: italic;
-        color: #555;
-        margin-bottom: 8mm;
-      }
-      .ownership-page .child-name-line {
-        font-family: "${fontSet.titleFontFamily || "Luckiest Guy"}", cursive;
-        font-size: 28pt;
-        color: #2c3e50;
-        border-bottom: 2px dotted #cccccc;
-        padding: 0 10mm 4mm 10mm;
-        min-width: 60%;
-        margin-bottom: 8mm;
-        white-space: nowrap;
-      }
-      .ownership-page .adventure-seeker {
-        font-family: "${fontSet.bodyFontFamily || "EB Garamond"}", serif;
-        font-size: 12pt;
-        color: #7f8c8d;
-      }
+      .ownership-page { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+      .ownership-page .belongs-to { font-family: "${fontSet.bodyFontFamily}", serif; font-size: 14pt; font-style: italic; color: #555; margin-bottom: 8mm; }
+      .ownership-page .child-name-line { font-family: "${fontSet.titleFontFamily || "Luckiest Guy"}", cursive; font-size: 28pt; color: #2c3e50; border-bottom: 2px dotted #cccccc; padding: 0 10mm 4mm 10mm; min-width: 60%; margin-bottom: 8mm; white-space: nowrap; }
+      .ownership-page .adventure-seeker { font-family: "${fontSet.bodyFontFamily || "EB Garamond"}", serif; font-size: 12pt; color: #7f8c8d; }
       
       /* --- 5. STRONA Z DEDYKACJĄ --- */
-      .dedication-page {
-        justify-content: center;
-        align-items: center;
-        text-align: center;
-        font-size: 13pt;
-        font-style: italic;
-        padding: 15% 10%;
-        color: #34495e;
-        line-height: 1.8;
-      }
-      .dedication-page div {
-        max-width: 80%;
-      }
+      .dedication-page { justify-content: center; align-items: center; text-align: center; font-size: 13pt; font-style: italic; padding: 15% 10%; color: #34495e; line-height: 1.8; }
+      .dedication-page div { max-width: 80%; }
       
       /* --- 6. STRONY Z TREŚCIĄ BAJKI --- */
-      .story-page {
-        background-size: cover;
-        background-position: center center;
-        align-items: center;
-        justify-content: flex-end;
-        border: none !important;
-        padding: 0;
-      }
-      .story-page::after {
-        content: '';
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        height: 40%;
-        background: linear-gradient(to top, rgba(255, 255, 255, 1) 30%, rgba(255, 255, 255, 0) 100%);
-        z-index: 1;
-        pointer-events: none;
-      }
-      .story-page .text-content {
-        position: relative;
-        z-index: 2;
-        width: calc(100% - 30mm);
-        max-height: 50%;
-        margin-bottom: -10mm;
-        padding: 15mm 12mm;
-        font-size: 11.9pt;
-        text-align: justify;
-        color: #2c3e50;
-        overflow-y: auto;
-      }
-      .story-page .text-content p {
-        margin-top: 0;
-        margin-bottom: 0.7em;
-      }
-      .story-page .text-content p + p {
-        text-indent: 1.5em;
-      }
-      .story-page .text-content p:first-of-type::first-letter {
-        font-family: "Dancing Script", cursive;
-        font-size: 3.5em;
-        float: left;
-        line-height: 0.8;
-        margin-right: 0.07em;
-        margin-top: 0.05em;
-        color: #34495e;
-      }
+      .story-page { background-size: cover; background-position: center center; align-items: center; justify-content: flex-end; border: none !important; padding: 0; }
+      .story-page::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 40%; background: linear-gradient(to top, rgba(255, 255, 255, 1) 30%, rgba(255, 255, 255, 0) 100%); z-index: 1; pointer-events: none; }
+      .story-page .text-content { position: relative; z-index: 2; width: calc(100% - 20mm); max-height: 30%; margin-bottom: -10mm; padding: 15mm 12mm; font-size: 11.9pt; text-align: justify; color: #2c3e50; overflow-y: auto; }
+      .story-page .text-content p { margin-top: 0; margin-bottom: 0.7em; }
+      .story-page .text-content p + p { text-indent: 1.5em; }
+      .story-page .text-content p:first-of-type::first-letter { font-family: "Dancing Script", cursive; font-size: 3.5em; float: left; line-height: 0.8; margin-right: 0.07em; margin-top: 0.05em; color: #34495e; }
       
       /* --- 7. STRONA KOŃCOWA --- */
-      .ending-page {
-        justify-content: center;
-        align-items: center;
-        text-align: center;
-      }
-      .ending-page .the-end-text {
-        font-family: "${fontSet.titleFontFamily || "Luckiest Guy"}", cursive;
-        font-size: 34pt;
-        color: #34495e;
-        margin-bottom: 10mm;
-      }
-      .ending-page .thank-you-text {
-        font-family: "${fontSet.bodyFontFamily || "EB Garamond"}", serif;
-        font-size: 12pt;
-        color: #555;
-        margin-bottom: 20mm;
-      }
-      .ending-page .logo-placeholder-ending {
-        font-size: 10pt;
-        color: #b0b0b0;
-      }
+      .ending-page { justify-content: center; align-items: center; text-align: center; }
+      .ending-page .the-end-text { font-family: "${fontSet.titleFontFamily || "Luckiest Guy"}", cursive; font-size: 34pt; color: #34495e; margin-bottom: 10mm; }
+      .ending-page .thank-you-text { font-family: "${fontSet.bodyFontFamily || "EB Garamond"}", serif; font-size: 12pt; color: #555; margin-bottom: 20mm; }
+      .ending-page .logo-placeholder-ending { font-size: 10pt; color: #b0b0b0; }
     </style>
   `;
 }
@@ -389,14 +226,12 @@ async function generateFullHtmlForBook(bookData, fontSet) {
 async function generatePdfBufferWithPuppeteer(htmlContent, bookProportion) {
     let browser = null;
     try {
-        // INTELIGENTNE WYKRYWANIE ŚRODOWISKA
+        let puppeteer;
+        
         if (process.env.K_SERVICE) {
-            // --- LOGIKA PRODUKCYJNA (GOOGLE CLOUD RUN) ---
-            console.log("Uruchamiam w trybie produkcyjnym z @sparticuz/chromium...");
-            
-            // POPRAWKA: Dodajemy .default, aby uzyskać dostęp do właściwego obiektu z modułu
+            console.log("Uruchamiam w trybie produkcyjnym (Google Cloud Run) z @sparticuz/chromium...");
             const chromium = (await import('@sparticuz/chromium')).default;
-            const puppeteer = (await import('puppeteer-core')).default;
+            puppeteer = (await import('puppeteer-core')).default;
 
             browser = await puppeteer.launch({
                 args: chromium.args,
@@ -405,14 +240,9 @@ async function generatePdfBufferWithPuppeteer(htmlContent, bookProportion) {
                 headless: chromium.headless,
                 ignoreHTTPSErrors: true,
             });
-
         } else {
-            // --- LOGIKA LOKALNA (TWÓJ KOMPUTER) ---
             console.log("Uruchamiam w trybie deweloperskim z lokalnym Puppeteer...");
-            
-            // Ta część już działała poprawnie, ale upewniamy się, że ma .default
-            const puppeteer = (await import('puppeteer')).default;
-            
+            puppeteer = (await import('puppeteer')).default;
             browser = await puppeteer.launch({
                 headless: true
             });
