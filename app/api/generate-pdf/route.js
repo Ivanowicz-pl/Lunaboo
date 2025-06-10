@@ -226,31 +226,49 @@ async function generateFullHtmlForBook(bookData, fontSet) {
 async function generatePdfBufferWithPuppeteer(htmlContent, bookProportion) {
     let browser = null;
     try {
-        let puppeteer;
-        
-        if (process.env.K_SERVICE) {
-            console.log("Uruchamiam w trybie produkcyjnym (Google Cloud Run) z @sparticuz/chromium...");
-            const chromium = (await import('@sparticuz/chromium')).default;
-            puppeteer = (await import('puppeteer-core')).default;
+        console.log("--- ROZPOCZYNAM GENEROWANIE PDF ---");
 
+        if (process.env.K_SERVICE) {
+            // --- LOGIKA PRODUKCYJNA (GOOGLE CLOUD RUN) ---
+            console.log("[PROD] Uruchamiam w środowisku Google Cloud.");
+            const chromium = (await import('@sparticuz/chromium')).default;
+            const puppeteer = (await import('puppeteer-core')).default;
+
+            console.log("[PROD] Dodaję pustą czcionkę, aby wymusić rozpakowanie chromium (trick diagnostyczny)...");
+            // Ten krok to znany sposób, aby upewnić się, że pliki binarne są gotowe
+            await chromium.font('https://raw.githack.com/googlei18n/noto-cjk/main/NotoSansCJK-Regular.ttc');
+            console.log("[PROD] Paczka chromium powinna być gotowa.");
+
+            const executablePath = await chromium.executablePath();
+            console.log(`[PROD] Uzyskano ścieżkę do przeglądarki: ${executablePath}`);
+
+            const args = chromium.args;
+            console.log(`[PROD] Używam argumentów: ${JSON.stringify(args)}`);
+
+            console.log("[PROD] Próbuję uruchomić przeglądarkę...");
             browser = await puppeteer.launch({
-                args: chromium.args,
+                args: args,
                 defaultViewport: chromium.defaultViewport,
-                executablePath: await chromium.executablePath(),
+                executablePath: executablePath,
                 headless: chromium.headless,
                 ignoreHTTPSErrors: true,
             });
+            console.log("[PROD] Przeglądarka uruchomiona pomyślnie.");
+
         } else {
+            // --- LOGIKA LOKALNA (TWÓJ KOMPUTER) ---
             console.log("Uruchamiam w trybie deweloperskim z lokalnym Puppeteer...");
-            puppeteer = (await import('puppeteer')).default;
+            const puppeteer = (await import('puppeteer')).default;
             browser = await puppeteer.launch({
                 headless: true
             });
+            console.log("Przeglądarka lokalna uruchomiona pomyślnie.");
         }
 
-        console.log("Przeglądarka uruchomiona pomyślnie.");
         const page = await browser.newPage();
+        console.log("Stworzono nową stronę.");
         await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+        console.log("Wstawiono treść HTML do strony.");
         
         let pdfOptions = { 
             printBackground: true, 
@@ -262,20 +280,21 @@ async function generatePdfBufferWithPuppeteer(htmlContent, bookProportion) {
         else if (bookProportion === "landscape") { pdfOptions.width = '210mm'; pdfOptions.height = '148mm'; } 
         else { pdfOptions.format = 'A5'; }
 
+        console.log("Próbuję wygenerować bufor PDF...");
         const pdfBuffer = await page.pdf(pdfOptions);
-        console.log("PDF wygenerowany pomyślnie.");
+        console.log("Bufor PDF wygenerowany pomyślnie.");
         return pdfBuffer;
 
     } catch (error) {
-        console.error("Krytyczny błąd podczas generowania PDF z Puppeteer:", error);
+        console.error("❌ KRYTYCZNY BŁĄG W generatePdfBufferWithPuppeteer:", error);
         if (error instanceof Error) {
-            console.error(error.stack);
+            console.error("STACK TRACE BŁĘDU:", error.stack);
         }
         throw error;
     } finally {
         if (browser) {
             await browser.close();
-            console.log("Przeglądarka zamknięta.");
+            console.log("Przeglądarka została zamknięta.");
         }
     }
 }
