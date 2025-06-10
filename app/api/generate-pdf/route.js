@@ -1,6 +1,9 @@
 // /app/api/generate-pdf/route.js
 import { NextResponse } from "next/server";
-import puppeteer from "puppeteer";
+// ZMIANA IMPORTÓW:
+import chromium from '@sparticuz/chromium';
+import core from 'puppeteer-core';
+// KONIEC ZMIAN
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -293,7 +296,7 @@ async function getPdfStyles(fontSet) {
         font-family: "Dancing Script", cursive;
         font-size: 3.5em;
         float: left;
-        line-height: 1.2;
+        line-height: 0.8;
         margin-right: 0.07em;
         margin-top: 0.05em;
         color: #34495e;
@@ -384,23 +387,65 @@ async function generateFullHtmlForBook(bookData, fontSet) {
 }
 
 async function generatePdfBufferWithPuppeteer(htmlContent, bookProportion) {
-    let browser;
+    let browser = null;
     try {
-        browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--font-render-hinting=none'] });
+        let executablePath;
+        let puppeteer;
+
+        // NOWA, NIEZAWODNA METODA WYKRYWANIA ŚRODOWISKA
+        if (process.env.K_SERVICE) {
+            // Jesteśmy na serwerze Google Cloud Run
+            console.log("Uruchamiam w trybie produkcyjnym (Google Cloud Run) z @sparticuz/chromium...");
+            const chromium = await import('@sparticuz/chromium');
+            puppeteer = await import('puppeteer-core');
+            executablePath = await chromium.executablePath();
+        } else {
+            // Jesteśmy na komputerze lokalnym (Windows/Mac/Linux)
+            console.log("Uruchamiam w trybie deweloperskim z lokalnym Puppeteer...");
+            // Używamy pełnej paczki puppeteer, która jest w devDependencies
+            puppeteer = await import('puppeteer');
+            executablePath = puppeteer.executablePath();
+        }
+
+        console.log(`Ścieżka do przeglądarki: ${executablePath}`);
+
+        // Używamy jednej, spójnej metody launch
+        browser = await puppeteer.launch({
+            args: process.env.K_SERVICE ? (await import('@sparticuz/chromium')).args : [], // Argumenty tylko dla chromium w chmurze
+            defaultViewport: (await import('@sparticuz/chromium')).defaultViewport,
+            executablePath: executablePath,
+            headless: process.env.K_SERVICE ? (await import('@sparticuz/chromium')).headless : true, // Używamy chromium.headless w chmurze
+            ignoreHTTPSErrors: true,
+        });
+        
         const page = await browser.newPage();
         await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
-        let pdfOptions = { printBackground: true, margin: { top: '0', right: '0', bottom: '0', left: '0' } };
+        
+        let pdfOptions = { 
+            printBackground: true, 
+            margin: { top: '0', right: '0', bottom: '0', left: '0' } 
+        };
+        
         if (bookProportion === "square") { pdfOptions.width = '210mm'; pdfOptions.height = '210mm'; }
-        else if (bookProportion === "portrait") { pdfOptions.format = 'A5'; }
-        else if (bookProportion === "landscape") { pdfOptions.width = '210mm'; pdfOptions.height = '148mm'; }
+        else if (bookProportion === "portrait") { pdfOptions.format = 'A5'; } 
+        else if (bookProportion === "landscape") { pdfOptions.width = '210mm'; pdfOptions.height = '148mm'; } 
         else { pdfOptions.format = 'A5'; }
+
         const pdfBuffer = await page.pdf(pdfOptions);
-        await browser.close();
+        console.log("PDF wygenerowany pomyślnie.");
         return pdfBuffer;
+
     } catch (error) {
-        console.error("Puppeteer PDF generation error:", error);
-        if (browser) await browser.close();
+        console.error("Krytyczny błąd podczas generowania PDF z Puppeteer:", error);
+        if (error instanceof Error) {
+            console.error(error.stack);
+        }
         throw error;
+    } finally {
+        if (browser) {
+            await browser.close();
+            console.log("Przeglądarka zamknięta.");
+        }
     }
 }
 
