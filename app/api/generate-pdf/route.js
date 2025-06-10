@@ -228,32 +228,25 @@ async function generatePdfBufferWithPuppeteer(htmlContent, bookProportion) {
     try {
         console.log("--- ROZPOCZYNAM GENEROWANIE PDF ---");
 
+        // INTELIGENTNE WYKRYWANIE ŚRODOWISKA
         if (process.env.K_SERVICE) {
             // --- LOGIKA PRODUKCYJNA (GOOGLE CLOUD RUN) ---
             console.log("[PROD] Uruchamiam w środowisku Google Cloud.");
             const chromium = (await import('@sparticuz/chromium')).default;
             const puppeteer = (await import('puppeteer-core')).default;
 
-            console.log("[PROD] Dodaję pustą czcionkę, aby wymusić rozpakowanie chromium (trick diagnostyczny)...");
-            // Ten krok to znany sposób, aby upewnić się, że pliki binarne są gotowe
-            await chromium.font('https://raw.githack.com/googlei18n/noto-cjk/main/NotoSansCJK-Regular.ttc');
-            console.log("[PROD] Paczka chromium powinna być gotowa.");
+            // Usunęliśmy wadliwą linię 'chromium.font(...)'
 
             const executablePath = await chromium.executablePath();
             console.log(`[PROD] Uzyskano ścieżkę do przeglądarki: ${executablePath}`);
 
-            const args = chromium.args;
-            console.log(`[PROD] Używam argumentów: ${JSON.stringify(args)}`);
-
-            console.log("[PROD] Próbuję uruchomić przeglądarkę...");
             browser = await puppeteer.launch({
-                args: args,
+                args: chromium.args,
                 defaultViewport: chromium.defaultViewport,
                 executablePath: executablePath,
                 headless: chromium.headless,
                 ignoreHTTPSErrors: true,
             });
-            console.log("[PROD] Przeglądarka uruchomiona pomyślnie.");
 
         } else {
             // --- LOGIKA LOKALNA (TWÓJ KOMPUTER) ---
@@ -262,11 +255,10 @@ async function generatePdfBufferWithPuppeteer(htmlContent, bookProportion) {
             browser = await puppeteer.launch({
                 headless: true
             });
-            console.log("Przeglądarka lokalna uruchomiona pomyślnie.");
         }
 
+        console.log("Przeglądarka uruchomiona pomyślnie.");
         const page = await browser.newPage();
-        console.log("Stworzono nową stronę.");
         await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
         console.log("Wstawiono treść HTML do strony.");
         
