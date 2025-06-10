@@ -1,13 +1,37 @@
 "use client";
 
-import React from 'react';
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from 'react';
 import {
   UserIcon, CalendarIcon, PhotoIcon, CameraIcon, SparklesIcon,
   BookOpenIcon, PaintBrushIcon, PencilIcon, ArrowRightIcon,
-  ArrowLeftIcon, CheckIcon, LightBulbIcon, GiftIcon 
+  ArrowLeftIcon, CheckIcon, LightBulbIcon, GiftIcon
 } from "@heroicons/react/24/solid";
 
+
+// --- NOWA FUNKCJA POMOCNICZA DO PONAWIANIA PRÓB ---
+// Ta funkcja będzie próbowała wykonać zapytanie `fetch` kilkukrotnie w razie błędu.
+const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, delay = 3000) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url, options);
+      // Jeśli odpowiedź jest OK lub jeśli to błąd klienta (np. 400), który nie powinien być ponawiany, zwracamy od razu.
+      if (response.ok || (response.status >= 400 && response.status < 500)) {
+        return response;
+      }
+      // W przeciwnym razie (błąd serwera 5xx lub błąd sieciowy) rzucamy błąd, aby ponowić próbę.
+      throw new Error(`Server error: ${response.status}`);
+    } catch (error) {
+      console.log(`Próba ${i + 1} nie powiodła się. Ponawiam za ${delay / 1000}s...`);
+      if (i === retries - 1) throw error; // Rzuć błąd po ostatniej nieudanej próbie
+      await new Promise(res => setTimeout(res, delay));
+    }
+  }
+  // Ta linia nie powinna być nigdy osiągnięta, ale jest dla bezpieczeństwa TypeScript
+  throw new Error("Nie udało się wykonać zapytania po kilku próbach.");
+};
+
+
+// --- Stałe konfiguracyjne (bez zmian) ---
 const themesByCategory = {
   "Przygoda": {
     icon: <SparklesIcon className="w-6 h-6 mr-3 text-amber-500" />,
@@ -48,29 +72,39 @@ const bookProportionsOptions = [
     { value: "landscape", label: "Krajobraz" }
 ];
 
+const steps = [
+    { number: 1, title: "O dziecku i formacie" },
+    { number: 2, title: "Fabuła" },
+    { number: 3, title: "Styl i dedykacja" },
+    { number: 4, title: "Podsumowanie" }
+];
+
+
+// --- Główny komponent formularza ---
 export default function BookForm() {
+  // --- Stany komponentu (bez zmian) ---
   const [step, setStep] = useState(1);
   const [childName, setChildName] = useState("");
-  const [age, setAge] = useState(""); 
+  const [age, setAge] = useState("");
   const [storyTheme, setStoryTheme] = useState("");
   const [customStoryTheme, setCustomStoryTheme] = useState("");
   const [dedication, setDedication] = useState("");
   const [selectedStyle, setSelectedStyle] = useState("Bajkowy pastelowy (domyślny)");
-  const [image, setImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
-  const [loading, setLoading] = useState(false); 
-  const [response, setResponse] = useState(null); 
+  const [image, setImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [response, setResponse] = useState<any | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [expandedCategory, setExpandedCategory] = useState(Object.keys(themesByCategory)[0]);
-  const [bookProportion, setBookProportion] = useState("square"); 
-
+  const [bookProportion, setBookProportion] = useState("square");
   const [loadingRandomTheme, setLoadingRandomTheme] = useState(false);
   const [loadingDedication, setLoadingDedication] = useState(false);
-
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [userEmail, setUserEmail] = useState("");
-  const [paymentStatus, setPaymentStatus] = useState(null); 
+  const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); // Dodany stan na błędy
 
+  // --- Efekty (useEffect) (bez zmian) ---
   useEffect(() => {
     if (!storyTheme) {
       const firstCategory = Object.keys(themesByCategory)[0];
@@ -78,26 +112,27 @@ export default function BookForm() {
           setStoryTheme(themesByCategory[firstCategory].themes[0]);
       }
     }
-  }, []); 
+  }, []);
 
   useEffect(() => {
     if (customStoryTheme.trim() !== "") {
       setStoryTheme("Własna opowieść");
-    } else if (storyTheme === "Własna opowieść" && customStoryTheme.trim() === "") { 
+    } else if (storyTheme === "Własna opowieść" && customStoryTheme.trim() === "") {
         const firstCategory = Object.keys(themesByCategory)[0];
         if (firstCategory && themesByCategory[firstCategory].themes.length > 0) {
             setStoryTheme(themesByCategory[firstCategory].themes[0]);
         }
     }
-  }, [customStoryTheme, storyTheme]); 
+  }, [customStoryTheme, storyTheme]);
 
   useEffect(() => {
-    const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+    const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
     setIsMobile(/android|iphone|ipad|ipod/i.test(userAgent));
   }, []);
 
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
+  // --- Funkcje obsługi zdarzeń ---
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (file) {
       setImage(file);
       setImagePreview(URL.createObjectURL(file));
@@ -105,30 +140,25 @@ export default function BookForm() {
   };
 
   const handleSurpriseClick = async () => {
+    // Ta funkcja i handleGenerateDedication mogą również używać fetchWithRetry,
+    // ale zostawiam je bez zmian, aby skupić się na głównym problemie.
     setLoadingRandomTheme(true);
     try {
-      const requestBody = {};
-      if (age.trim()) { 
-          requestBody.age = age;
-      }
-      const res = await fetch('/api/generate-random-theme', { 
-        method: 'POST', 
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(requestBody) 
+      const requestBody: { age?: string } = {};
+      if (age.trim()) { requestBody.age = age; }
+      const res = await fetch('/api/generate-random-theme', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(requestBody)
       });
       if (!res.ok) {
           const errorData = await res.json().catch(() => ({ error: "Nie udało się odczytać błędu serwera."}));
           throw new Error(errorData.error || 'Nie udało się wygenerować losowego tematu.');
       }
       const data = await res.json();
-      if (data.theme) {
-        setCustomStoryTheme(data.theme);
-      } else {
-        throw new Error('API nie zwróciło tematu.');
-      }
+      if (data.theme) { setCustomStoryTheme(data.theme); } 
+      else { throw new Error('API nie zwróciło tematu.'); }
     } catch (error) {
       console.error("Error generating random theme:", error);
-      alert(error instanceof Error ? error.message : "Przepraszamy, nie udało się wygenerować losowego tematu. Spróbuj ponownie.");
+      alert(error instanceof Error ? error.message : "Przepraszamy, nie udało się wygenerować losowego tematu.");
     } finally {
       setLoadingRandomTheme(false);
     }
@@ -143,135 +173,96 @@ export default function BookForm() {
     try {
       const finalCurrentTheme = customStoryTheme.trim() !== "" ? customStoryTheme.trim() : storyTheme;
       const res = await fetch('/api/generate-dedication', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            childName: childName.trim(), 
-            age: age.trim(), 
-            storyTheme: finalCurrentTheme 
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ childName: childName.trim(), age: age.trim(), storyTheme: finalCurrentTheme }),
       });
       if (!res.ok) {
           const errorData = await res.json().catch(() => ({ error: "Nie udało się odczytać błędu serwera."}));
           throw new Error(errorData.error || 'Nie udało się wygenerować dedykacji.');
       }
       const data = await res.json();
-      if (data.dedication) {
-        setDedication(data.dedication);
-      } else {
-        throw new Error('API nie zwróciło dedykacji.');
-      }
+      if (data.dedication) { setDedication(data.dedication); }
+      else { throw new Error('API nie zwróciło dedykacji.'); }
     } catch (error) {
       console.error("Error generating dedication:", error);
-      alert(error instanceof Error ? error.message : "Przepraszamy, nie udało się wygenerować dedykacji. Spróbuj ponownie.");
+      alert(error instanceof Error ? error.message : "Przepraszamy, nie udało się wygenerować dedykacji.");
     } finally {
       setLoadingDedication(false);
     }
   };
 
-  const handleSubmit = async () => { 
-    console.log("handleSubmit WYWOŁANY przez kliknięcie dedykowanego przycisku");
+  // ZMODYFIKOWANA FUNKCJA do generowania treści i obrazków
+  const handleSubmit = async () => {
     const finalTheme = customStoryTheme.trim() !== "" ? customStoryTheme : storyTheme;
 
-    if (!childName.trim() || !age.trim() || !image || !bookProportion) { 
+    if (!childName.trim() || !age.trim() || !image || !bookProportion) {
       alert("Proszę wypełnić wszystkie dane dziecka (imię, wiek, format, zdjęcie).");
-      setStep(1); 
-      return;
+      setStep(1); return;
     }
     if (!finalTheme || finalTheme.trim() === "" || (storyTheme === "Własna opowieść" && !customStoryTheme.trim())) {
         alert("Proszę wybrać temat bajki lub wpisać własny pomysł.");
-        setStep(2); 
-        return;
+        setStep(2); return;
     }
 
     setLoading(true);
-    setResponse(null); 
+    setResponse(null);
+    setError(null); // Resetuj błąd
     const formData = new FormData();
     formData.append("childName", childName);
-    formData.append("ageGroup", age); 
+    formData.append("ageGroup", age);
     formData.append("storyTheme", finalTheme);
     formData.append("dedication", dedication);
     formData.append("selectedStyle", selectedStyle);
     formData.append("images", image);
+    
     try {
-      const res = await fetch("/api/generate-all-images", { method: "POST", body: formData });
+      // UŻYWAMY NOWEJ FUNKCJI `fetchWithRetry`
+      const res = await fetchWithRetry("/api/generate-all-images", { method: "POST", body: formData });
+      
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || "Wystąpił nieznany błąd serwera podczas generowania treści.");
-      setResponse(data); 
+      
+      setResponse(data);
       console.log("Sukces! Otrzymano dane książki:", data);
-      setPaymentStatus(null); 
+      setPaymentStatus(null);
     } catch (err) {
-      if (err instanceof Error) alert("Wystąpił błąd podczas generowania treści książki: " + err.message);
-      else alert("Wystąpił nieznany błąd podczas generowania treści książki.");
+      const errorMessage = err instanceof Error ? err.message : "Wystąpił nieznany błąd.";
+      console.error("Błąd podczas generowania treści książki: ", errorMessage);
+      setError("Błąd podczas generowania treści książki: " + errorMessage);
+      alert("Błąd podczas generowania treści książki: " + errorMessage);
     } finally {
       setLoading(false);
     }
   };
   
-  const resetFormAndBook = () => {
-    setResponse(null); setStep(1); setChildName(""); setAge("");
-    const firstCategory = Object.keys(themesByCategory)[0];
-    if (firstCategory && themesByCategory[firstCategory].themes.length > 0) {
-        setStoryTheme(themesByCategory[firstCategory].themes[0]);
-    } else { setStoryTheme(""); }
-    setCustomStoryTheme(""); setDedication(""); setSelectedStyle("Bajkowy pastelowy (domyślny)");
-    setImage(null); setImagePreview(null); setExpandedCategory(firstCategory);
-    setBookProportion("square"); setShowPaymentModal(false); setPaymentStatus(null); setUserEmail("");
-  };
-  
-  const prevStep = () => setStep(s => Math.max(s - 1, 1)); 
-
-  const nextStep = () => {
-    if (step === 1) {
-      if (!childName.trim() || !age.trim() || !image || !bookProportion) {
-        alert("Proszę wypełnić wszystkie pola (imię, wiek, format książki) i wgrać zdjęcie, aby przejść dalej.");
-        return; 
-      }
-    }
-    if (step === 2) {
-      const finalThemeToValidate = customStoryTheme.trim() !== "" ? customStoryTheme.trim() : storyTheme;
-      if (!finalThemeToValidate || finalThemeToValidate.trim() === "") { 
-          alert("Proszę wybrać temat bajki lub wpisać własny pomysł, aby przejść dalej.");
-          return; 
-      }
-      if (storyTheme === "Własna opowieść" && !customStoryTheme.trim()) {
-        alert("Proszę wpisać własny temat bajki lub wybrać gotowy pomysł.");
-        return;
-      }
-    }
-    setStep(s => Math.min(s + 1, steps.length)); 
-  };
-
-  const steps = [
-    { number: 1, title: "O dziecku i formacie" },
-    { number: 2, title: "Fabuła" },
-    { number: 3, title: "Styl i dedykacja" },
-    { number: 4, title: "Podsumowanie" }
-  ];
-
-  const handleProceedToPayment = () => { setShowPaymentModal(true); };
-
+  // ZMODYFIKOWANA FUNKCJA do pobierania PDF
   const handlePdfDownload = async () => {
-      if (!response || paymentStatus !== 'success') { 
+      if (!response || paymentStatus !== 'success') {
           alert("Płatność nie została zakończona lub wystąpił błąd danych książki.");
           return;
       }
-      setLoading(true); 
+      setLoading(true);
+      setError(null); // Resetuj błąd
+
       try {
           const pdfRequestData = {
               storyTitle: response.storyTitle, fragments: response.fragments,
-              generatedImages: response.generatedImages, dedication: response.dedication, 
-              childName: childName, selectedStyle: selectedStyle, 
-              bookProportion: bookProportion, age: age 
+              generatedImages: response.generatedImages, dedication: response.dedication,
+              childName: childName, selectedStyle: selectedStyle,
+              bookProportion: bookProportion, age: age
           };
-          const pdfRes = await fetch("/api/generate-pdf", { 
+          
+          // UŻYWAMY NOWEJ FUNKCJI `fetchWithRetry`
+          const pdfRes = await fetchWithRetry("/api/generate-pdf", {
               method: "POST", headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(pdfRequestData),
           });
+
           if (!pdfRes.ok) {
               const errorData = await pdfRes.json().catch(() => ({error: "Nie udało się odczytać błędu serwera PDF."}));
               throw new Error(errorData.error || "Nie udało się wygenerować pliku PDF.");
           }
+
           const blob = await pdfRes.blob();
           const link = document.createElement('a');
           link.href = URL.createObjectURL(blob);
@@ -282,13 +273,53 @@ export default function BookForm() {
           document.body.removeChild(link);
           URL.revokeObjectURL(link.href);
       } catch (err) {
-          if (err instanceof Error) alert("Błąd podczas pobierania PDF: " + err.message);
-          else alert("Wystąpił nieznany błąd podczas pobierania PDF.");
+          const errorMessage = err instanceof Error ? err.message : "Wystąpił nieznany błąd.";
+          console.error("Błąd podczas pobierania PDF: ", errorMessage);
+          setError("Błąd podczas pobierania PDF: " + errorMessage);
+          alert("Błąd podczas pobierania PDF: " + errorMessage);
       } finally {
           setLoading(false);
       }
   };
 
+  const resetFormAndBook = () => {
+    setResponse(null); setStep(1); setChildName(""); setAge("");
+    const firstCategory = Object.keys(themesByCategory)[0];
+    if (firstCategory && themesByCategory[firstCategory].themes.length > 0) {
+        setStoryTheme(themesByCategory[firstCategory].themes[0]);
+    } else { setStoryTheme(""); }
+    setCustomStoryTheme(""); setDedication(""); setSelectedStyle("Bajkowy pastelowy (domyślny)");
+    setImage(null); setImagePreview(null); setExpandedCategory(firstCategory);
+    setBookProportion("square"); setShowPaymentModal(false); setPaymentStatus(null); setUserEmail("");
+    setError(null);
+  };
+  
+  const prevStep = () => setStep(s => Math.max(s - 1, 1));
+  
+  const nextStep = () => {
+    if (step === 1) {
+      if (!childName.trim() || !age.trim() || !image || !bookProportion) {
+        alert("Proszę wypełnić wszystkie pola (imię, wiek, format książki) i wgrać zdjęcie, aby przejść dalej.");
+        return;
+      }
+    }
+    if (step === 2) {
+      const finalThemeToValidate = customStoryTheme.trim() !== "" ? customStoryTheme.trim() : storyTheme;
+      if (!finalThemeToValidate || finalThemeToValidate.trim() === "") {
+          alert("Proszę wybrać temat bajki lub wpisać własny pomysł, aby przejść dalej.");
+          return;
+      }
+      if (storyTheme === "Własna opowieść" && !customStoryTheme.trim()) {
+        alert("Proszę wpisać własny temat bajki lub wybrać gotowy pomysł.");
+        return;
+      }
+    }
+    setStep(s => Math.min(s + 1, steps.length));
+  };
+  
+  const handleProceedToPayment = () => { setShowPaymentModal(true); };
+
+  // --- Renderowanie komponentu (JSX) (bez zmian) ---
   return (
     <div className="w-full max-w-5xl mx-auto mt-10 p-6 sm:p-8 bg-white/80 rounded-3xl shadow-2xl backdrop-blur-xl border border-gray-200 text-gray-900">
       <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-2 text-center">Stwórz wyjątkową książkę</h1>
@@ -312,14 +343,13 @@ export default function BookForm() {
             </div>
           </div>
 
-          {/* Zamiast <form onSubmit={handleSubmit}> używamy zwykłego div-a dla zawartości kroków */}
           <div className="space-y-8">
             {step === 1 && (
               <div className="animate-fade-in space-y-8">
                 <div> <label className="font-semibold text-gray-700 block mb-2">Imię dziecka</label> <div className="relative"> <UserIcon className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2"/> <input type="text" value={childName} onChange={(e) => setChildName(e.target.value)} placeholder="np. Zosia" className="w-full p-4 pl-12 bg-gray-50 border-2 border-transparent rounded-xl shadow-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500 transition" /> </div> </div>
                 <div> <label className="font-semibold text-gray-700 block mb-2">Wiek dziecka</label> <div className="relative"> <CalendarIcon className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2"/> <input type="text" inputMode="numeric" pattern="\d*" value={age} onChange={(e) => { const newAge = e.target.value; if (/^\d*$/.test(newAge) && (newAge === "" || (parseInt(newAge) >= 1 && parseInt(newAge) <= 18))) { setAge(newAge); }}} placeholder="Wiek (np. 5)" className="w-full p-4 pl-12 bg-gray-50 border-2 border-transparent rounded-xl shadow-sm appearance-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500 transition" /> </div> </div>
                 <div> <label className="font-semibold text-gray-700 block mb-2">Wybierz format książeczki:</label> <div className="flex flex-wrap gap-4 justify-center sm:justify-start"> {bookProportionsOptions.map(prop => ( <button key={prop.value} type="button" onClick={() => setBookProportion(prop.value)} className={`p-3 border-2 rounded-lg flex flex-col items-center justify-center w-28 h-28 sm:w-32 sm:h-32 transition-all focus:outline-none ${bookProportion === prop.value ? 'border-violet-500 bg-violet-100 shadow-lg ring-2 ring-violet-500' : 'border-gray-300 bg-gray-50 hover:border-gray-400 hover:bg-gray-100'}`}> <div className="flex items-center justify-center mb-2"> {prop.value === "square" && <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gray-400 border-2 border-gray-500 rounded"></div>} {prop.value === "portrait" && <div className="w-8 h-10 sm:w-10 sm:h-12 bg-gray-400 border-2 border-gray-500 rounded"></div>} {prop.value === "landscape" && <div className="w-12 h-8 sm:w-14 sm:h-10 bg-gray-400 border-2 border-gray-500 rounded"></div>} </div> <span className={`text-sm font-medium ${bookProportion === prop.value ? 'text-violet-700' : 'text-gray-600'}`}>{prop.label}</span> </button> ))} </div> </div>
-                <div> <label className="font-semibold text-gray-700 block mb-2">Zdjęcie głównego bohatera</label> <label htmlFor="file-upload" className="relative cursor-pointer bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:border-violet-400 transition"> <PhotoIcon className="w-12 h-12 text-gray-400 mb-2"/> <span className="font-semibold text-violet-600">Kliknij, aby wybrać plik</span> <p className="text-sm text-gray-500 mt-1">lub przeciągnij i upuść</p> <input id="file-upload" type="file" accept="image/*" onChange={handleImageChange} className="hidden" /> </label> {isMobile && ( <button type="button" onClick={() => document.getElementById('camera-input').click()} className="w-full mt-4 flex items-center justify-center gap-2 bg-gray-200 text-gray-700 font-semibold px-4 py-3 rounded-xl hover:bg-gray-300 transition"> <CameraIcon className="w-5 h-5"/> Zrób zdjęcie telefonem </button> )} <input id="camera-input" type="file" accept="image/*" capture="environment" onChange={handleImageChange} className="hidden" /> {imagePreview && ( <div className="mt-4 text-center"> <p className="text-sm text-gray-600 mb-2">Podgląd:</p> <img src={imagePreview} alt="Podgląd zdjęcia" className="w-32 h-32 object-cover rounded-xl mx-auto border-4 border-white shadow-lg"/> </div> )} </div>
+                <div> <label className="font-semibold text-gray-700 block mb-2">Zdjęcie głównego bohatera</label> <label htmlFor="file-upload" className="relative cursor-pointer bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:border-violet-400 transition"> <PhotoIcon className="w-12 h-12 text-gray-400 mb-2"/> <span className="font-semibold text-violet-600">Kliknij, aby wybrać plik</span> <p className="text-sm text-gray-500 mt-1">lub przeciągnij i upuść</p> <input id="file-upload" type="file" accept="image/*" onChange={handleImageChange} className="hidden" /> </label> {isMobile && ( <button type="button" onClick={() => (document.getElementById('camera-input') as HTMLInputElement)?.click()} className="w-full mt-4 flex items-center justify-center gap-2 bg-gray-200 text-gray-700 font-semibold px-4 py-3 rounded-xl hover:bg-gray-300 transition"> <CameraIcon className="w-5 h-5"/> Zrób zdjęcie telefonem </button> )} <input id="camera-input" type="file" accept="image/*" capture="environment" onChange={handleImageChange} className="hidden" /> {imagePreview && ( <div className="mt-4 text-center"> <p className="text-sm text-gray-600 mb-2">Podgląd:</p> <img src={imagePreview} alt="Podgląd zdjęcia" className="w-32 h-32 object-cover rounded-xl mx-auto border-4 border-white shadow-lg"/> </div> )} </div>
               </div>
             )}
             {step === 2 && (
@@ -347,36 +377,32 @@ export default function BookForm() {
               </div>
             )}
 
-            {/* NAWIGACJA KROKÓW */}
             <div className="flex justify-between items-center pt-6">
               {step > 1 ? ( <button type="button" onClick={prevStep} className="flex items-center gap-2 bg-gray-200 text-gray-700 font-semibold px-6 py-3 rounded-xl hover:bg-gray-300 transition-colors"> <ArrowLeftIcon className="w-5 h-5"/> Wstecz </button> ) : (<div></div>)}
-              {step < steps.length ? ( 
-                <button type="button" onClick={nextStep} className="flex items-center gap-2 bg-violet-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-violet-700 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-1"> Dalej <ArrowRightIcon className="w-5 h-5"/> </button> 
+              {step < steps.length ? (
+                <button type="button" onClick={nextStep} className="flex items-center gap-2 bg-violet-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-violet-700 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-1"> Dalej <ArrowRightIcon className="w-5 h-5"/> </button>
               ) : null }
             </div>
-          </div> {/* Koniec diva dla kroków formularza */}
+          </div>
 
-          {/* Przycisk generowania treści, tylko na ostatnim kroku */}
-          {step === steps.length && !loading && (
+          {step === steps.length && !loading && !response && (
             <div className="text-center pt-6 mt-4 border-t border-gray-200">
                 <p className="text-sm text-gray-600 mb-4">Jesteś gotowy/a, aby zobaczyć magię? Kliknij poniżej!</p>
-                <button 
-                    type="button" // Zmieniono z "submit"
-                    onClick={handleSubmit} // Bezpośrednie wywołanie
-                    disabled={loading} 
+                <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={loading}
                     className="bg-gradient-to-r from-green-500 to-emerald-600 text-white text-lg font-bold px-8 py-4 rounded-2xl hover:scale-105 transition-transform shadow-lg hover:shadow-xl w-full sm:w-auto disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                    Wygeneruj Treść Książeczki
+                    Wygeneruj Treść i Obrazki
                 </button>
             </div>
           )}
-          {loading && step === steps.length && ( 
-            <div className="text-center pt-6 mt-4 font-semibold text-violet-700">Generuję treść...</div>
+          {loading && !response && (
+            <div className="text-center pt-6 mt-4 font-semibold text-violet-700">Generuję treść i obrazki... To może potrwać do 2 minut...</div>
           )}
         </>
-      ) : ( 
-        // Widok po wygenerowaniu treści (response istnieje)
-        // ... (bez zmian) ...
+      ) : (
         <div className="mt-12 p-8 bg-slate-50 rounded-2xl shadow-inner animate-fade-in">
           <h2 className="text-3xl font-bold text-center text-violet-700 mb-4">🎉 Twoja magiczna książeczka jest gotowa! 🎉</h2>
           <p className="text-center text-xl text-gray-800 mb-2">"{response.storyTitle}"</p>
@@ -390,26 +416,25 @@ export default function BookForm() {
       )}
 
       {showPaymentModal && (
-        // ... (kod modalu płatności - bez zmian) ...
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
           <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md animate-fade-in text-gray-900">
             <h3 className="text-2xl font-bold text-gray-800 mb-6 text-center">Finalizacja Zamówienia</h3>
-            <p className="text-gray-600 mb-2">Aby pobrać swoją książeczkę PDF "{response?.storyTitle}", prosimy o dokonanie płatności.</p>
+            <p className="text-gray-600 mb-2">Aby pobrać swoją książeczkę PDF "{response?.storyTitle}", prosimy o dokonanie płatności... żartowałem, to beta! Nie ma płatności :*.</p>
             <p className="text-gray-600 mb-4">Proszę podać adres e-mail, na który wyślemy potwierdzenie i link do pobrania:</p>
             <input type="email" value={userEmail} onChange={(e) => setUserEmail(e.target.value)} placeholder="Twój adres e-mail" className="w-full p-3 mb-6 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-violet-500 text-gray-900"/>
             <div className="mb-6">
-              <p className="text-center font-semibold text-lg text-gray-700 mb-1">Cena: XX PLN</p> 
+              <p className="text-center font-semibold text-lg text-gray-700 mb-1">Cena: XX PLN</p>
               <p className="text-center text-xs text-gray-500 mb-3">(Symulacja - płatność nie zostanie pobrana)</p>
-              <button onClick={() => { console.log("Rozpoczynam symulację płatności dla email:", userEmail); setPaymentStatus('success'); setShowPaymentModal(false); }}
+              <button onClick={() => { setPaymentStatus('success'); setShowPaymentModal(false); }}
                 className="w-full bg-yellow-400 text-black font-bold py-3 px-6 rounded-lg hover:bg-yellow-500 transition shadow-md">
                 Zapłać z PayU (Symulacja)
               </button>
             </div>
-            {paymentStatus === 'success' && !loading && (
-                 <button onClick={handlePdfDownload} disabled={loading}
+            {paymentStatus === 'success' && (
+                  <button onClick={handlePdfDownload} disabled={loading}
                     className="w-full bg-green-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-600 transition shadow-md mb-4">
                     {loading ? "Generuję PDF..." : "Pobierz PDF Książeczki"}
-                </button>
+                  </button>
             )}
             <div className="text-center">
               <button onClick={() => { setShowPaymentModal(false); setPaymentStatus(null); }} className="text-sm text-gray-500 hover:text-gray-700"> Anuluj i wróć </button>
@@ -418,13 +443,13 @@ export default function BookForm() {
         </div>
       )}
       
-       <style jsx>{`
+        <style jsx>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
         }
         .animate-fade-in { animation: fadeIn 0.5s ease-in-out forwards; }
       `}</style>
-    </div> 
+    </div>
   );
 }
