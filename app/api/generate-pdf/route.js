@@ -394,9 +394,9 @@ async function generatePdfBufferWithPuppeteer(htmlContent, bookProportion) {
             // --- LOGIKA PRODUKCYJNA (GOOGLE CLOUD RUN) ---
             console.log("Uruchamiam w trybie produkcyjnym z @sparticuz/chromium...");
             
-            // W chmurze używamy puppeteer-core i chromium
-            const chromium = await import('@sparticuz/chromium');
-            const puppeteer = await import('puppeteer-core');
+            // POPRAWKA: Dodajemy .default, aby uzyskać dostęp do właściwego obiektu z modułu
+            const chromium = (await import('@sparticuz/chromium')).default;
+            const puppeteer = (await import('puppeteer-core')).default;
 
             browser = await puppeteer.launch({
                 args: chromium.args,
@@ -410,15 +410,15 @@ async function generatePdfBufferWithPuppeteer(htmlContent, bookProportion) {
             // --- LOGIKA LOKALNA (TWÓJ KOMPUTER) ---
             console.log("Uruchamiam w trybie deweloperskim z lokalnym Puppeteer...");
             
-            // Na komputerze lokalnym używamy pełnej paczki puppeteer z devDependencies
+            // Ta część już działała poprawnie, ale upewniamy się, że ma .default
             const puppeteer = (await import('puppeteer')).default;
-
+            
             browser = await puppeteer.launch({
-                headless: true // Standardowe, proste uruchomienie lokalne
+                headless: true
             });
         }
 
-        // --- WSPÓLNA CZĘŚĆ DLA OBU ŚRODOWISK ---
+        console.log("Przeglądarka uruchomiona pomyślnie.");
         const page = await browser.newPage();
         await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
         
