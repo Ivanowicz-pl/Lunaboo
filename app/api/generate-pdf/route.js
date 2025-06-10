@@ -389,35 +389,36 @@ async function generateFullHtmlForBook(bookData, fontSet) {
 async function generatePdfBufferWithPuppeteer(htmlContent, bookProportion) {
     let browser = null;
     try {
-        let executablePath;
-        let puppeteer;
-
-        // NOWA, NIEZAWODNA METODA WYKRYWANIA ŚRODOWISKA
+        // INTELIGENTNE WYKRYWANIE ŚRODOWISKA
         if (process.env.K_SERVICE) {
-            // Jesteśmy na serwerze Google Cloud Run
-            console.log("Uruchamiam w trybie produkcyjnym (Google Cloud Run) z @sparticuz/chromium...");
+            // --- LOGIKA PRODUKCYJNA (GOOGLE CLOUD RUN) ---
+            console.log("Uruchamiam w trybie produkcyjnym z @sparticuz/chromium...");
+            
+            // W chmurze używamy puppeteer-core i chromium
             const chromium = await import('@sparticuz/chromium');
-            puppeteer = await import('puppeteer-core');
-            executablePath = await chromium.executablePath();
+            const puppeteer = await import('puppeteer-core');
+
+            browser = await puppeteer.launch({
+                args: chromium.args,
+                defaultViewport: chromium.defaultViewport,
+                executablePath: await chromium.executablePath(),
+                headless: chromium.headless,
+                ignoreHTTPSErrors: true,
+            });
+
         } else {
-            // Jesteśmy na komputerze lokalnym (Windows/Mac/Linux)
+            // --- LOGIKA LOKALNA (TWÓJ KOMPUTER) ---
             console.log("Uruchamiam w trybie deweloperskim z lokalnym Puppeteer...");
-            // Używamy pełnej paczki puppeteer, która jest w devDependencies
-            puppeteer = await import('puppeteer');
-            executablePath = puppeteer.executablePath();
+            
+            // Na komputerze lokalnym używamy pełnej paczki puppeteer z devDependencies
+            const puppeteer = (await import('puppeteer')).default;
+
+            browser = await puppeteer.launch({
+                headless: true // Standardowe, proste uruchomienie lokalne
+            });
         }
 
-        console.log(`Ścieżka do przeglądarki: ${executablePath}`);
-
-        // Używamy jednej, spójnej metody launch
-        browser = await puppeteer.launch({
-            args: process.env.K_SERVICE ? (await import('@sparticuz/chromium')).args : [], // Argumenty tylko dla chromium w chmurze
-            defaultViewport: (await import('@sparticuz/chromium')).defaultViewport,
-            executablePath: executablePath,
-            headless: process.env.K_SERVICE ? (await import('@sparticuz/chromium')).headless : true, // Używamy chromium.headless w chmurze
-            ignoreHTTPSErrors: true,
-        });
-        
+        // --- WSPÓLNA CZĘŚĆ DLA OBU ŚRODOWISK ---
         const page = await browser.newPage();
         await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
         
