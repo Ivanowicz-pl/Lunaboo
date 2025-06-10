@@ -7,32 +7,26 @@ import {
   ArrowLeftIcon, CheckIcon, LightBulbIcon, GiftIcon
 } from "@heroicons/react/24/solid";
 
-
-// --- NOWA FUNKCJA POMOCNICZA DO PONAWIANIA PRÓB ---
-// Ta funkcja będzie próbowała wykonać zapytanie `fetch` kilkukrotnie w razie błędu.
-const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, delay = 3000) => {
+// --- NOWA FUNKCJA POMOCNICZA DO PONAWIANIA PRÓB (z poprawnymi typami) ---
+const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, delay = 3000): Promise<Response> => {
   for (let i = 0; i < retries; i++) {
     try {
       const response = await fetch(url, options);
-      // Jeśli odpowiedź jest OK lub jeśli to błąd klienta (np. 400), który nie powinien być ponawiany, zwracamy od razu.
       if (response.ok || (response.status >= 400 && response.status < 500)) {
         return response;
       }
-      // W przeciwnym razie (błąd serwera 5xx lub błąd sieciowy) rzucamy błąd, aby ponowić próbę.
       throw new Error(`Server error: ${response.status}`);
     } catch (error) {
       console.log(`Próba ${i + 1} nie powiodła się. Ponawiam za ${delay / 1000}s...`);
-      if (i === retries - 1) throw error; // Rzuć błąd po ostatniej nieudanej próbie
+      if (i === retries - 1) throw error;
       await new Promise(res => setTimeout(res, delay));
     }
   }
-  // Ta linia nie powinna być nigdy osiągnięta, ale jest dla bezpieczeństwa TypeScript
   throw new Error("Nie udało się wykonać zapytania po kilku próbach.");
 };
 
-
-// --- Stałe konfiguracyjne (bez zmian) ---
-const themesByCategory = {
+// --- Stałe konfiguracyjne ---
+const themesByCategory: { [key: string]: { icon: JSX.Element; themes: string[] } } = {
   "Przygoda": {
     icon: <SparklesIcon className="w-6 h-6 mr-3 text-amber-500" />,
     themes: ["Przygoda w kosmosie", "Podwodny świat", "Wyścig przez dżunglę", "Safari w Afryce z magicznym jeepem", "Wyprawa w czasie – poznajemy dinozaury"]
@@ -79,32 +73,28 @@ const steps = [
     { number: 4, title: "Podsumowanie" }
 ];
 
-
-// --- Główny komponent formularza ---
 export default function BookForm() {
-  // --- Stany komponentu (bez zmian) ---
   const [step, setStep] = useState(1);
   const [childName, setChildName] = useState("");
-  const [age, setAge] = useState("");
+  const [age, setAge] = useState(""); 
   const [storyTheme, setStoryTheme] = useState("");
   const [customStoryTheme, setCustomStoryTheme] = useState("");
   const [dedication, setDedication] = useState("");
   const [selectedStyle, setSelectedStyle] = useState("Bajkowy pastelowy (domyślny)");
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [response, setResponse] = useState<any | null>(null);
+  const [loading, setLoading] = useState(false); 
+  const [response, setResponse] = useState<any | null>(null); 
   const [isMobile, setIsMobile] = useState(false);
-  const [expandedCategory, setExpandedCategory] = useState(Object.keys(themesByCategory)[0]);
-  const [bookProportion, setBookProportion] = useState("square");
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(Object.keys(themesByCategory)[0]);
+  const [bookProportion, setBookProportion] = useState("square"); 
   const [loadingRandomTheme, setLoadingRandomTheme] = useState(false);
   const [loadingDedication, setLoadingDedication] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [userEmail, setUserEmail] = useState("");
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null); // Dodany stan na błędy
+  const [error, setError] = useState<string | null>(null);
 
-  // --- Efekty (useEffect) (bez zmian) ---
   useEffect(() => {
     if (!storyTheme) {
       const firstCategory = Object.keys(themesByCategory)[0];
@@ -112,25 +102,24 @@ export default function BookForm() {
           setStoryTheme(themesByCategory[firstCategory].themes[0]);
       }
     }
-  }, []);
+  }, []); 
 
   useEffect(() => {
     if (customStoryTheme.trim() !== "") {
       setStoryTheme("Własna opowieść");
-    } else if (storyTheme === "Własna opowieść" && customStoryTheme.trim() === "") {
+    } else if (storyTheme === "Własna opowieść" && customStoryTheme.trim() === "") { 
         const firstCategory = Object.keys(themesByCategory)[0];
         if (firstCategory && themesByCategory[firstCategory].themes.length > 0) {
             setStoryTheme(themesByCategory[firstCategory].themes[0]);
         }
     }
-  }, [customStoryTheme, storyTheme]);
+  }, [customStoryTheme, storyTheme]); 
 
   useEffect(() => {
     const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
     setIsMobile(/android|iphone|ipad|ipod/i.test(userAgent));
   }, []);
 
-  // --- Funkcje obsługi zdarzeń ---
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -140,25 +129,30 @@ export default function BookForm() {
   };
 
   const handleSurpriseClick = async () => {
-    // Ta funkcja i handleGenerateDedication mogą również używać fetchWithRetry,
-    // ale zostawiam je bez zmian, aby skupić się na głównym problemie.
     setLoadingRandomTheme(true);
     try {
       const requestBody: { age?: string } = {};
-      if (age.trim()) { requestBody.age = age; }
-      const res = await fetch('/api/generate-random-theme', {
-        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(requestBody)
+      if (age.trim()) { 
+          requestBody.age = age;
+      }
+      const res = await fetch('/api/generate-random-theme', { 
+        method: 'POST', 
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(requestBody) 
       });
       if (!res.ok) {
           const errorData = await res.json().catch(() => ({ error: "Nie udało się odczytać błędu serwera."}));
           throw new Error(errorData.error || 'Nie udało się wygenerować losowego tematu.');
       }
       const data = await res.json();
-      if (data.theme) { setCustomStoryTheme(data.theme); } 
-      else { throw new Error('API nie zwróciło tematu.'); }
+      if (data.theme) {
+        setCustomStoryTheme(data.theme);
+      } else {
+        throw new Error('API nie zwróciło tematu.');
+      }
     } catch (error) {
       console.error("Error generating random theme:", error);
-      alert(error instanceof Error ? error.message : "Przepraszamy, nie udało się wygenerować losowego tematu.");
+      alert(error instanceof Error ? error.message : "Przepraszamy, nie udało się wygenerować losowego tematu. Spróbuj ponownie.");
     } finally {
       setLoadingRandomTheme(false);
     }
@@ -173,58 +167,64 @@ export default function BookForm() {
     try {
       const finalCurrentTheme = customStoryTheme.trim() !== "" ? customStoryTheme.trim() : storyTheme;
       const res = await fetch('/api/generate-dedication', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ childName: childName.trim(), age: age.trim(), storyTheme: finalCurrentTheme }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            childName: childName.trim(), 
+            age: age.trim(), 
+            storyTheme: finalCurrentTheme 
+        }),
       });
       if (!res.ok) {
           const errorData = await res.json().catch(() => ({ error: "Nie udało się odczytać błędu serwera."}));
           throw new Error(errorData.error || 'Nie udało się wygenerować dedykacji.');
       }
       const data = await res.json();
-      if (data.dedication) { setDedication(data.dedication); }
-      else { throw new Error('API nie zwróciło dedykacji.'); }
+      if (data.dedication) {
+        setDedication(data.dedication);
+      } else {
+        throw new Error('API nie zwróciło dedykacji.');
+      }
     } catch (error) {
       console.error("Error generating dedication:", error);
-      alert(error instanceof Error ? error.message : "Przepraszamy, nie udało się wygenerować dedykacji.");
+      alert(error instanceof Error ? error.message : "Przepraszamy, nie udało się wygenerować dedykacji. Spróbuj ponownie.");
     } finally {
       setLoadingDedication(false);
     }
   };
 
-  // ZMODYFIKOWANA FUNKCJA do generowania treści i obrazków
-  const handleSubmit = async () => {
+  const handleSubmit = async () => { 
+    console.log("handleSubmit WYWOŁANY przez kliknięcie dedykowanego przycisku");
     const finalTheme = customStoryTheme.trim() !== "" ? customStoryTheme : storyTheme;
 
-    if (!childName.trim() || !age.trim() || !image || !bookProportion) {
+    if (!childName.trim() || !age.trim() || !image || !bookProportion) { 
       alert("Proszę wypełnić wszystkie dane dziecka (imię, wiek, format, zdjęcie).");
-      setStep(1); return;
+      setStep(1); 
+      return;
     }
     if (!finalTheme || finalTheme.trim() === "" || (storyTheme === "Własna opowieść" && !customStoryTheme.trim())) {
         alert("Proszę wybrać temat bajki lub wpisać własny pomysł.");
-        setStep(2); return;
+        setStep(2); 
+        return;
     }
 
     setLoading(true);
-    setResponse(null);
-    setError(null); // Resetuj błąd
+    setResponse(null); 
+    setError(null);
     const formData = new FormData();
     formData.append("childName", childName);
-    formData.append("ageGroup", age);
+    formData.append("ageGroup", age); 
     formData.append("storyTheme", finalTheme);
     formData.append("dedication", dedication);
     formData.append("selectedStyle", selectedStyle);
     formData.append("images", image);
-    
     try {
-      // UŻYWAMY NOWEJ FUNKCJI `fetchWithRetry`
       const res = await fetchWithRetry("/api/generate-all-images", { method: "POST", body: formData });
-      
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || "Wystąpił nieznany błąd serwera podczas generowania treści.");
-      
-      setResponse(data);
+      setResponse(data); 
       console.log("Sukces! Otrzymano dane książki:", data);
-      setPaymentStatus(null);
+      setPaymentStatus(null); 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Wystąpił nieznany błąd.";
       console.error("Błąd podczas generowania treści książki: ", errorMessage);
@@ -235,25 +235,22 @@ export default function BookForm() {
     }
   };
   
-  // ZMODYFIKOWANA FUNKCJA do pobierania PDF
   const handlePdfDownload = async () => {
-      if (!response || paymentStatus !== 'success') {
+      if (!response || paymentStatus !== 'success') { 
           alert("Płatność nie została zakończona lub wystąpił błąd danych książki.");
           return;
       }
-      setLoading(true);
-      setError(null); // Resetuj błąd
-
+      setLoading(true); 
+      setError(null);
       try {
           const pdfRequestData = {
               storyTitle: response.storyTitle, fragments: response.fragments,
-              generatedImages: response.generatedImages, dedication: response.dedication,
-              childName: childName, selectedStyle: selectedStyle,
-              bookProportion: bookProportion, age: age
+              generatedImages: response.generatedImages, dedication: response.dedication, 
+              childName: childName, selectedStyle: selectedStyle, 
+              bookProportion: bookProportion, age: age 
           };
           
-          // UŻYWAMY NOWEJ FUNKCJI `fetchWithRetry`
-          const pdfRes = await fetchWithRetry("/api/generate-pdf", {
+          const pdfRes = await fetchWithRetry("/api/generate-pdf", { 
               method: "POST", headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(pdfRequestData),
           });
@@ -262,7 +259,6 @@ export default function BookForm() {
               const errorData = await pdfRes.json().catch(() => ({error: "Nie udało się odczytać błędu serwera PDF."}));
               throw new Error(errorData.error || "Nie udało się wygenerować pliku PDF.");
           }
-
           const blob = await pdfRes.blob();
           const link = document.createElement('a');
           link.href = URL.createObjectURL(blob);
@@ -291,35 +287,33 @@ export default function BookForm() {
     setCustomStoryTheme(""); setDedication(""); setSelectedStyle("Bajkowy pastelowy (domyślny)");
     setImage(null); setImagePreview(null); setExpandedCategory(firstCategory);
     setBookProportion("square"); setShowPaymentModal(false); setPaymentStatus(null); setUserEmail("");
-    setError(null);
   };
   
-  const prevStep = () => setStep(s => Math.max(s - 1, 1));
-  
+  const prevStep = () => setStep(s => Math.max(s - 1, 1)); 
+
   const nextStep = () => {
     if (step === 1) {
       if (!childName.trim() || !age.trim() || !image || !bookProportion) {
         alert("Proszę wypełnić wszystkie pola (imię, wiek, format książki) i wgrać zdjęcie, aby przejść dalej.");
-        return;
+        return; 
       }
     }
     if (step === 2) {
       const finalThemeToValidate = customStoryTheme.trim() !== "" ? customStoryTheme.trim() : storyTheme;
-      if (!finalThemeToValidate || finalThemeToValidate.trim() === "") {
+      if (!finalThemeToValidate || finalThemeToValidate.trim() === "") { 
           alert("Proszę wybrać temat bajki lub wpisać własny pomysł, aby przejść dalej.");
-          return;
+          return; 
       }
       if (storyTheme === "Własna opowieść" && !customStoryTheme.trim()) {
         alert("Proszę wpisać własny temat bajki lub wybrać gotowy pomysł.");
         return;
       }
     }
-    setStep(s => Math.min(s + 1, steps.length));
+    setStep((s: number) => Math.min(s + 1, steps.length)); 
   };
   
   const handleProceedToPayment = () => { setShowPaymentModal(true); };
 
-  // --- Renderowanie komponentu (JSX) (bez zmian) ---
   return (
     <div className="w-full max-w-5xl mx-auto mt-10 p-6 sm:p-8 bg-white/80 rounded-3xl shadow-2xl backdrop-blur-xl border border-gray-200 text-gray-900">
       <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-2 text-center">Stwórz wyjątkową książkę</h1>
@@ -343,6 +337,7 @@ export default function BookForm() {
             </div>
           </div>
 
+          {/* === KOD JSX FORMULARZA (POZOSTAWIONY W CAŁOŚCI) === */}
           <div className="space-y-8">
             {step === 1 && (
               <div className="animate-fade-in space-y-8">
@@ -379,8 +374,8 @@ export default function BookForm() {
 
             <div className="flex justify-between items-center pt-6">
               {step > 1 ? ( <button type="button" onClick={prevStep} className="flex items-center gap-2 bg-gray-200 text-gray-700 font-semibold px-6 py-3 rounded-xl hover:bg-gray-300 transition-colors"> <ArrowLeftIcon className="w-5 h-5"/> Wstecz </button> ) : (<div></div>)}
-              {step < steps.length ? (
-                <button type="button" onClick={nextStep} className="flex items-center gap-2 bg-violet-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-violet-700 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-1"> Dalej <ArrowRightIcon className="w-5 h-5"/> </button>
+              {step < steps.length ? ( 
+                <button type="button" onClick={nextStep} className="flex items-center gap-2 bg-violet-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-violet-700 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-1"> Dalej <ArrowRightIcon className="w-5 h-5"/> </button> 
               ) : null }
             </div>
           </div>
@@ -423,7 +418,7 @@ export default function BookForm() {
             <p className="text-gray-600 mb-4">Proszę podać adres e-mail, na który wyślemy potwierdzenie i link do pobrania:</p>
             <input type="email" value={userEmail} onChange={(e) => setUserEmail(e.target.value)} placeholder="Twój adres e-mail" className="w-full p-3 mb-6 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-violet-500 text-gray-900"/>
             <div className="mb-6">
-              <p className="text-center font-semibold text-lg text-gray-700 mb-1">Cena: XX PLN</p>
+              <p className="text-center font-semibold text-lg text-gray-700 mb-1">Cena: XX PLN</p> 
               <p className="text-center text-xs text-gray-500 mb-3">(Symulacja - płatność nie zostanie pobrana)</p>
               <button onClick={() => { setPaymentStatus('success'); setShowPaymentModal(false); }}
                 className="w-full bg-yellow-400 text-black font-bold py-3 px-6 rounded-lg hover:bg-yellow-500 transition shadow-md">
@@ -450,6 +445,6 @@ export default function BookForm() {
         }
         .animate-fade-in { animation: fadeIn 0.5s ease-in-out forwards; }
       `}</style>
-    </div>
+    </div> 
   );
 }
