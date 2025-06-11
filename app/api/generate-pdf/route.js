@@ -237,7 +237,11 @@ async function generatePdfBufferWithPuppeteer(htmlContent, bookProportion) {
 
             // Usunęliśmy wadliwą linię 'chromium.font(...)'
 
-            const executablePath = await chromium.executablePath();
+           let executablePath = await chromium.executablePath;
+if (!executablePath) {
+  console.warn("⚠️ executablePath jest null – ustawiam fallback na '/usr/bin/chromium-browser'");
+  executablePath = "/usr/bin/chromium-browser";
+}
             console.log(`[PROD] Uzyskano ścieżkę do przeglądarki: ${executablePath}`);
 
             browser = await puppeteer.launch({
